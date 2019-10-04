@@ -1,0 +1,194 @@
+\documentclass{article}
+\usepackage{geometry}
+\geometry{letterpaper, margin=1in}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{upgreek}
+\usepackage{url}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath}
+\usepackage[colorinlistoftodos]{todonotes}
+\usepackage[
+backend=biber,
+style=ieee,
+sorting=none
+]{biblatex}
+ 
+\addbibresource{assign.bib}
+
+\title{ECE532S Digital Systems Design \\ \vspace{0.4cm}
+       \Large Assignment 2 - FPGA Design Practices \\ \vspace{0.4cm}
+       \small Due: Feb 00, 2019}
+\author{ }
+\date{ }
+
+\begin{document}
+\maketitle
+\vspace{-1cm}
+
+FPGAs contain many powerful primitives for implementing digital logic.
+To design effectively for FPGAs, it is important to understand how these primitives work and when to use them.
+In this assignment, you will perform some exercises to better understand some of these elements.
+
+This assignment consists of three parts.
+You will submit a report containing tabulated data and a discussion for each part, as well as separate Verilog code and test bench files. Look carefully at the \emph{submission} listing of each section to see what is requested.
+
+To help with setting up the evaluation environment, a zip archive with supporting Vivado scripts is provided.
+Read the README file in the archive to understand how to use the files.
+
+\section{Random Access Memories (RAMs)}
+Modern FPGAs have several different types of storage primitives.
+In the Xilinx Artix-7 FPGAs (like the one inside the Nexys 4 boards), you can implement storage elements in Flip Flops, Distributed RAMs and Block RAMs.
+To perform the following exercises, you will need to refer to the Xilinx user guides for Synthesis~\cite{xilinxsynth}, Memories~\cite{xilinxmem} and CLBs~\cite{xilinxclb}.
+
+\subsection{Problem}
+
+You must construct 3-port RAMs, with two read and one write ports, conforming to the following Verilog interface:
+
+\begin{verbatim}
+module ram532
+#(
+  parameter C_ADDR_WIDTH = 8,
+  parameter C_DATA_WIDTH = 32
+) (
+  input  clk,                        // clock
+  input  wen,                        // write enable
+  input  [C_DATA_WIDTH-1:0] wdata,   // write data
+  input  [C_ADDR_WIDTH-1:0] waddr,   // write address
+  output [C_DATA_WIDTH-1:0] rdata_0, // read port 0 data
+  input  [C_ADDR_WIDTH-1:0] raddr_0, // read port 0 address
+  output [C_DATA_WIDTH-1:0] rdata_1, // read port 1 data
+  input  [C_ADDR_WIDTH-1:0] raddr_1  // read port 1 address
+);
+\end{verbatim}
+
+The write data port consists of enable, data and address inputs. When write enable is high, the data contained in the \verb|wdata| wires is to be stored in the RAM at address \verb|waddr| in the next clock cycle.
+
+The read ports are always active, thus the RAM value at \verb|raddr| is produced at \verb|rdata| at the next cycle.
+You may implement any write mode.
+Note that the depth of a memory for a given address width is $2^{\text{width}}$.
+The default configuration as shown in the code sample implements a 256x32-bit RAM.
+
+\subsection{Tasks}
+
+Implement two RAM configurations: 256x32-bit and 1024x32-bit using Registers, Distributed RAM and Block RAM (Hint: Look up the \verb|ram_style| directive).
+You should have six implementations in total.
+For each implementation, record the reported resource utilization in Slice LUTs, Slice Registers, and Block RAMs.
+%`Note Vivado does not report Fmax directly~\cite{xilinxfmax};
+%to obtain the value compute $1/(5.0 - \text{Worst Negative Slack}$.
+In your code, you should direct the Vivado Synthesis tool to \emph{infer} the kinds of memories you need rather than instantiate them directly.
+
+\begin{minipage}{\textwidth}
+\noindent\textbf{Submission}\\
+In your report include:
+\begin{enumerate}
+\item A table listing the resource utilization obtained for each implementation
+\item A discussion comparing the different storage primitives. When would you want to use a specific primitive to implement a certain memory? 
+\end{enumerate}
+Submit your Verilog code as a separate file. You may submit one file and add a comment describing how to target different primitives.
+\end{minipage}
+\section{DSP Units}
+
+As for storage, FPGA vendors have included special primitives for performing certain types of computation.
+Of particular importance is the DSP Unit, known as the DSP48E1 in the Xilinx 7-series FPGAs.
+The DSP unit contains several different computation blocks connected with configurable paths.
+Your task is to design a simple computation module that makes the most use of these paths.
+Once again, look at the examples in the Vivado Synthesis Guide~\cite{xilinxsynth} for reference.
+You should review the Xilinx DSP reference~\cite{xilinxdsp} and the synthesis guide~\cite{xilinxsynth} to complete the problems in this section.
+
+\subsection{Problem}
+
+Create a Verilog module that implements the equation: $f(a,b,c) = (a+b)*c$ with the following interface:
+\begin{verbatim}
+module preadd532
+#(
+  parameter C_WIDTH = 16
+) (
+  input  clk,     // clock
+  input  in_vld,  // input valid
+  input  signed [C_WIDTH-1: 0] in_a, // a value
+  input  signed [C_WIDTH-1: 0] in_b, // b value
+  input  signed [C_WIDTH-1: 0] in_c, // c value
+  output signed [2*C_WIDTH: 0] out, // output value
+  output out_vld  //output valid
+);
+\end{verbatim}
+All three inputs a, b and c are valid when \verb|in_vld| is 1.
+The corresponding output value should be valid when \verb|out_vld| is high.
+Note this design allows for arbitrary delay between input and output values.
+
+\subsection{Tasks}
+Implement the following four versions of the function:
+\begin{enumerate}
+\item \verb|C_WIDTH=16| that maps onto the DSP48E1 unit, it should use no LUTs for logic
+\item \verb|C_WIDTH=16| that is forced to use LUTs only
+\item \verb|C_WIDTH=32| that targets DSP units, but may also spill into LUTs
+\item \verb|C_WIDTH=32| that is forced to use LUTs only
+\end{enumerate}
+
+Create a test bench, simulate the design and ensure it works correctly.
+Record the utilization and Fmax for the implementation being sure to include the number of DSP48E1 units.
+Note that Vivado does not directly produce the Fmax number~\cite{vivadofmax}.
+If you only have one level of flip flops or just the DSP block, there is no path between clocked flip flop elements. To simplify reporting, if your circuit behaves that way, you may compute your Fmax using the worst unconstrained path delay as the critical path.
+Look for the worst delay in the "Unconstrained Paths" part of the timing summary.
+
+\medskip
+\begin{minipage}{\textwidth}
+\noindent\textbf{Submission}\\
+In your report include:
+\begin{enumerate}
+\item A table listing the resource utilization and Fmax obtained for each of your four implementations
+\item A description of how you made your implementation pack into a single DSP48E1 block and what changed when the width was set to 32-bits
+\item A discussion comparing the utilization and Fmax of LUT vs DSP implementations. Are there cases when you would prefer using a particular resource?
+\end{enumerate}
+Submit your Verilog code and test bench as separate files.
+\end{minipage}
+
+\section{Resource Trade-offs}
+
+When designing circuits targeting FPGAs, you can control the resources and performance very finely by using different algorithms.
+In this final section, you will explore using memory for computation.
+
+\subsection{Problem}
+
+You are to implement the function $f(x) = x^3$ in a Verilog module using the following function interface:
+\begin{verbatim}
+module cube532
+(
+  input  clk,
+  input  [7:0] in,  // 8-bit unsigned input
+  output [23:0] out // 24-bit unsigned output (in^3)
+);
+\end{verbatim}
+This module should produce a new output one cycle after the input is registered.
+
+\subsection{Tasks}
+Create a version of \verb|cube532| that uses a Block RAM to implement the function.
+Considering that a function is a mapping from a domain to another, we can compute a function by using the input as the address to a read-only memory and producing the output as simply the value at the address.
+In the support files, \verb|cube.mem| contains this mapping for an 8-bit cube function.
+Use these values to implement the module and verify that the module works correctly through simulation.
+Create a second version of \verb|cube532| that performs the computation directly using multiplication and verify its correctness.
+Obtain utilization results for the two implementations.
+
+%\item Implement the function using multiplications.
+%\item Ensure both of these functions work correctly through simulation
+%\item Obtain utilization and Fmax results for the two implementations
+%\end{enumerate}
+
+\medskip
+\begin{minipage}{\textwidth}
+\noindent\textbf{Submission}\\
+In your report include:
+\begin{enumerate}
+\item A table listing the resource utilization obtained for each implementation
+\item A discussion comparing the different techniques. When would it be beneficial to use a RAM LUT versus performing the computation? Is it possible to combine the two techniques?
+\end{enumerate}
+Submit your Verilog files and testbench as separate files.
+\end{minipage}
+
+% EXTRA: Use this to build polynomial system
+% EXTRA: Consider timing
+\newpage
+\printbibliography
+
+\end{document}
